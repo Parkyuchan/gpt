@@ -1,8 +1,8 @@
-from django.contrib import admin 
-from django.urls import path 
-from . import views 
+from django.urls import path
+from . import views
 
-urlpatterns = [ 
-	path('', views.query_view, name='query_view'), 
-
-] 
+urlpatterns = [
+    path('', views.index, name='index'),
+    path('video_feed', views.hand_gesture, name='video_feed'),
+    path('handle_prompt/', views.handle_prompt, name='handle_prompt'),
+]
