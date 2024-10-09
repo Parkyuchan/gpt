@@ -1,5 +1,7 @@
 GPT API를 통한 수어 동작 실시간 번역 서버(Django)
 
+사용 OpenAI  모델 : gpt-turbo-3.5
+
 ### - 수어 번역
     
     
