@@ -1,7 +1,5 @@
 from django.shortcuts import render
 from django.http import JsonResponse, StreamingHttpResponse
-from channels.layers import get_channel_layer
-from asgiref.sync import async_to_sync
 import openai
 import cv2
 import mediapipe as mp
@@ -12,23 +10,19 @@ import os
 import atexit
 from django.conf import settings
 from django.views.decorators.csrf import csrf_exempt
+from PIL import ImageFont, ImageDraw, Image
 
 
 
-# 모델 로드
-right_model = tf.keras.models.load_model('main/models/best_right_model.keras')
-left_model = tf.keras.models.load_model('main/models/best_left_model.keras')
+model = tf.keras.models.load_model('main/models/both_model_video_시연.keras')
 
-# 동작 정의
-actions_right = ['meet', 'nice', 'hello', 'you', 'name', 'what', 'have', 'do not have', 'me']
-actions_left = ['meet', 'nice', 'hello', 'you', 'name', 'what', 'have', 'do not have', 'me']
-actions_both = ['meet', 'nice', 'hello', 'you', 'name', 'what', 'have', 'do not have', 'me']
-
-# 시퀀스 길이 설정
-seq_length = 30
+actions = ['공원', '발목', '쓰러지다', '구급차', '보내주세요(구급차)', '강남구', '쓰러지다', '알려주세요', '엄마', '보내주세요(구급차)', '심장마비',  '부러지다', '']
+seq_length = 60
 origin_cap = 0
 
-# MediaPipe Hands 초기화
+font_path = "/translate/gpt/main/models/NotoSansKR-VariableFont_wght.ttf"
+font = ImageFont.truetype(font_path, 30)
+
 mp_hands = mp.solutions.hands
 mp_drawing = mp.solutions.drawing_utils
 hands = mp_hands.Hands(
@@ -51,11 +45,14 @@ def hand_gesture(request):
                 f.write("")
 
     def gen_frames():
-        sequence = {'left': [], 'right': []}
-        action_seq = []
-        last_action_time = time.time()
-        this_action = ''
-        last_saved_action = ''
+        seq_data = []  
+        
+        previous_action = None
+        start_time = 0
+        current_action = None
+        seq_data_right = []
+        seq_data_left = []
+
 
         cap = cv2.VideoCapture(0)
         if not cap.isOpened():
@@ -66,8 +63,6 @@ def hand_gesture(request):
             request.session.create()
             user_id = request.session.session_key
 
-        channel_layer = get_channel_layer()
-
         while cap.isOpened():
             ret, img = cap.read()
             if not ret:
@@ -76,150 +71,69 @@ def hand_gesture(request):
             img = cv2.flip(img, 1)
             img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
             result = hands.process(img_rgb)
-            current_time = time.time()
 
             if result.multi_hand_landmarks is not None:
-
-                for hand_landmarks, hand_info in zip(result.multi_hand_landmarks, result.multi_handedness):
-                    joint = np.zeros((21, 4))
-                    for j, lm in enumerate(hand_landmarks.landmark):
-                        joint[j] = [lm.x, lm.y, lm.z, lm.visibility]
-
-                    v1 = joint[[0, 1, 2, 3, 0, 5, 6, 7, 0, 9, 10, 11, 0, 13, 14, 15, 0, 17, 18, 19], :3]
-                    v2 = joint[[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20], :3]
-                    v = v2 - v1
-                    v = v / np.linalg.norm(v, axis=1)[:, np.newaxis]
-
-                    dot_product = np.einsum('nt,nt->n', v, v)
-                    dot_product = np.clip(dot_product, -1.0, 1.0)
-
-                    angle = np.arccos(dot_product)
-                    angle = np.degrees(angle)
-
-                    d = np.concatenate([joint.flatten(), angle])
-
-                    hand_label = hand_info.classification[0].label
-                    if hand_label == 'Right':
-                        sequence['right'].append(d)
-                        if len(sequence['right']) > seq_length:
-                            sequence['right'].pop(0)
-                    else:
-                        sequence['left'].append(d)
-                        if len(sequence['left']) > seq_length:
-                            sequence['left'].pop(0)
-
-                if len(sequence['right']) == seq_length and len(sequence['left']) == seq_length:
-                    input_data_right = np.expand_dims(np.array(sequence['right']), axis=0)
-                    input_data_left = np.expand_dims(np.array(sequence['left']), axis=0)
-
-                    y_pred_right = right_model.predict(input_data_right).squeeze()
-                    y_pred_left = left_model.predict(input_data_left).squeeze()
-
-                    i_pred_right = int(np.argmax(y_pred_right))
-                    i_pred_left = int(np.argmax(y_pred_left))
-
-                    conf_right = y_pred_right[i_pred_right]
-                    conf_left = y_pred_left[i_pred_left]
-                    
-                    if i_pred_right < len(actions_right):
-                        print(f"Right hand prediction: {actions_right[i_pred_right]} ({conf_right:.2f})")
-                    else:
-                        print(f"Right hand prediction index {i_pred_right} is out of range for actions_right")
-
-                    if i_pred_left < len(actions_left):
-                        print(f"Left hand prediction: {actions_left[i_pred_left]} ({conf_left:.2f})")
-                    else:
-                        print(f"Left hand prediction index {i_pred_left} is out of range for actions_left")
-
-                    if conf_right > 0.5 and conf_left > 0.5:
-                        if i_pred_right < len(actions_both) and i_pred_left < len(actions_both):
-                            action = actions_both[i_pred_right]
-                            action_seq.append(action)
-
-                            if len(action_seq) > 3:
-                                action_seq = action_seq[-3:]
-
-                            if action_seq.count(action) > 1:
-                                this_action = action
-                            else:
-                                this_action = ' '
-
-                            last_action_time = current_time
-                            sequence = {'left': [], 'right': []}
-                
-                elif len(sequence['right']) == seq_length:
-                    input_data = np.expand_dims(np.array(sequence['right']), axis=0)
-                    y_pred = right_model.predict(input_data).squeeze()
-                    i_pred = int(np.argmax(y_pred))
-                    conf = y_pred[i_pred]
-                    
-                    if i_pred < len(actions_right):
-                        print(f"Right hand prediction: {actions_right[i_pred]} ({conf:.2f})")
-
-                    if conf > 0.5:
-                        action = actions_right[i_pred]
-                        action_seq.append(action)
-
-                        if len(action_seq) > 3:
-                            action_seq = action_seq[-3:]
-
-                        if action_seq.count(action) > 1:
-                            this_action = action
-                        else:
-                            this_action = ' '
-
-                        last_action_time = current_time
-                        sequence = {'left': [], 'right': []}
-                        
-                    else:
-                        print(f"Right hand prediction index {i_pred} is out of range for actions_right")
-
-                elif len(sequence['left']) == seq_length:
-                    input_data = np.expand_dims(np.array(sequence['left']), axis=0)
-                    y_pred = left_model.predict(input_data).squeeze()
-                    i_pred = int(np.argmax(y_pred))
-                    conf = y_pred[i_pred]
-                    
-                    if i_pred < len(actions_left):
-                        print(f"Left hand prediction: {actions_left[i_pred]} ({conf:.2f})")
-
-                    if conf > 0.5:
-                        action = actions_left[i_pred]
-                        action_seq.append(action)
-
-                        if len(action_seq) > 3:
-                            action_seq = action_seq[-3:]
-
-                        if action_seq.count(action) > 1:
-                            this_action = action
-                        else:
-                            this_action = ' '
-
-                        last_action_time = current_time
-                        sequence = {'left': [], 'right': []}
-                        
-                    else:
-                        print(f"Left hand prediction index {i_pred} is out of range for actions_left")
+                joint = np.zeros((126 * 2,))  # 양손의 랜드마크 데이터 (21*3*2)
+                hand_count = 0  # 손의 개수를 추적
 
                 for hand_landmarks in result.multi_hand_landmarks:
+                    for j, lm in enumerate(hand_landmarks.landmark):
+                        joint[hand_count * 21 * 3 + j * 3] = lm.x
+                        joint[hand_count * 21 * 3 + j * 3 + 1] = lm.y
+                        joint[hand_count * 21 * 3 + j * 3 + 2] = lm.z
+                    hand_count += 1
+
+                    # 양손의 랜드마크 그리기
                     mp_drawing.draw_landmarks(img, hand_landmarks, mp_hands.HAND_CONNECTIONS)
 
-            if current_time - last_action_time < 1:
-                cv2.putText(img, this_action, org=(0, 30), fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=1, color=(255, 255, 255), thickness=2)
-                if this_action != last_saved_action:
-                    last_action_time = time.time()
-                
-                    append_to_file(file_path, this_action)
-                    last_saved_action = this_action
+                    # 최대 두 손만 처리하도록 설정
+                    if hand_count == 2:
+                        break
 
-                # Send action to WebSocket
-                async_to_sync(channel_layer.group_send)(
-                    f"user_{user_id}",
-                    {
-                        "type": "action.message",
-                        "action": this_action,
-                    }
-                )
+                # 실시간 데이터 추가
+                seq_data.append(joint)
+
+                # 시퀀스 길이 유지 (최대 seq_length 프레임 저장)
+                if len(seq_data) > seq_length:
+                    seq_data.pop(0)
+
+                # 시퀀스가 충분히 쌓였을 때 예측
+                if len(seq_data) == seq_length:
+                    input_data = np.expand_dims(np.array(seq_data), axis=0)  # 모델 입력 형식에 맞게 차원 추가
+                    y_pred = model.predict(input_data).squeeze()
+
+                    # 예측 결과에 따라 동작 결정
+                    action_idx = np.argmax(y_pred)
+
+                    # 예측 인덱스가 유효한지 확인
+                    if action_idx < len(actions):
+                        action = actions[action_idx]
+                        confidence = y_pred[action_idx]
+
+                        # 예측 결과 출력
+                        print(f'예측된 동작: {action} ({confidence:.2f})')
+
+                        # 같은 동작이 1초 동안 유지되었을 때만 자막 업데이트
+                        if action == previous_action:
+                            if time.time() - start_time >= 1:
+                                current_action = action
+                        else:
+                            previous_action = action
+                            start_time = time.time()
+                            current_action = None
+                    else:
+                        current_action = None
+
+                    # 화면에 예측 결과 표시
+                    if current_action:
+                        img_pil = Image.fromarray(img)
+                        draw = ImageDraw.Draw(img_pil)
+                        text = f'{current_action} ({confidence:.2f})'
+                        draw.text((10, 150), text, font=font, fill=(255, 0, 0, 0))
+                        img = np.array(img_pil)
+                        append_to_file(file_path, current_action)
+
+            
             ret, jpeg = cv2.imencode('.jpg', img)
             frame = jpeg.tobytes()
             yield (b'--frame\r\n'
@@ -229,7 +143,7 @@ def hand_gesture(request):
 
     return StreamingHttpResponse(gen_frames(), content_type='multipart/x-mixed-replace; boundary=frame')
 
-openai.api_key='#'
+openai.api_key=#
 
 def handle_prompt(request):
     if request.method == 'POST':
@@ -239,7 +153,7 @@ def handle_prompt(request):
         handle_data = read_text_file(file_path)
 
         if handle_data:
-            result = handle_data + "수어 문장으로 해석"
+            result = handle_data + "자연스럽게 한 문장으로 해석해"
             result_content = get_completion(result) 
             append_to_file(result_file_path, result_content)
 
@@ -260,7 +174,6 @@ def index(request) :
         user_id = request.session.session_key
     file_path_result = get_result_file_path(user_id)
     result_content = read_text_file(file_path_result)
-    
     
     return render(request, 'index.html', {'result_content': result_content})
 
@@ -307,8 +220,16 @@ def get_result_file_path(user_id):
     return file_path
 
 def append_to_file(file_path, text):
-    with open(file_path, 'a', encoding='utf-8') as f:
-        f.write(f"{text}\n")
+    try:
+        if os.path.exists(file_path):
+            with open(file_path, 'r', encoding='utf-8') as f:
+                lines = f.readlines()
+                if lines and lines[-1].strip() == text.strip():
+                    return
+        with open(file_path, 'a', encoding='utf-8') as f:
+            f.write(f"{text}\n")
+    except Exception as e:
+        print(f"파일 쓰기 오류: {e}")
        
 def read_text_file(file_path):
     try:
