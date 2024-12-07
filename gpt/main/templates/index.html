@@ -34,7 +34,7 @@
         background-color: white;
     }
 
-     body {
+    body {
         font-family: 'HakgyoansimBareondotumB', sans-serif;
         display: flex;
         flex-direction: column;
@@ -42,7 +42,7 @@
         padding: 0;
         height: 100vh;
         overflow-x: hidden; /* 가로 스크롤 방지 */
-     }
+    }
         .header{
         width:100%;
         }
@@ -133,11 +133,13 @@
         }
 
         #response {
-        width: 95%;
-        height: 30%;; /* 고정된 높이 */
-        padding: 10px;
-        overflow-y: auto; /* 세로 스크롤 추가 */
-    }
+    width: 95%;
+    height: 30%; /* 고정된 높이 */
+    max-height: 330px; /* 최대 높이를 설정하여 말풍선이 3개까지만 보이도록 조정 */
+    padding: 10px;
+    overflow-y: auto; /* 세로 스크롤 추가 */
+}
+
 
     .bubble {
         margin-bottom: 10px;
@@ -161,64 +163,52 @@
             background-color: #4fc3f7;
         }
 
-.navbar {
-        display: flex;
-        justify-content: space-around; /* 중앙 정렬 */
-        align-items: center;
-        background-color: #f8f8f8;
-        width: 100%;
-        border-radius: 10px;
-        position: fixed;
-        bottom: 0;
-        left: 0;
-        right: 0;
-        z-index: 1000;
-    }
+        .navbar {
+            display: flex;
+            justify-content: space-around;
+            align-items: center;
+            background-color: #f8f8f8;
+            padding: 5px 0;
+            border-top: 1px solid #ddd;
+            width: 100%;
+            border-radius: 10px;
+            position: fixed; /* 고정 위치 */
+            bottom: 0; /* 하단 */
+            left: 0; /* 왼쪽 경계 */
+            right: 0; /* 오른쪽 경계 */
+            z-index: 1000; /* 다른 요소들 위에 나타나도록 z-index 설정 */
+        }
 
-    .navbar a {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        font-size: 5vw;
-        color: #333;
-        cursor: pointer;
-        text-decoration: none;
-    }
+        .navbar a {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            color: #333;
+            cursor: pointer;
+            text-decoration: none;
+        }
 
-    .navbar a i {
-        font-size: 4vw;
-        margin-bottom: 20%;
-    }
+        .navbar a i {
+            font-size: 20px;
+            margin-bottom: 20%;
+        }
 
-    .navbar a span {
-        display: block;
-        font-size: 3vw;
-    }
+        .navbar a span {
+            display: block;
+            font-size: 15px;
+        }
 
-    .navbar a:hover {
-        color: #007bff;
-    }
-
-    .fixed-title .back-button {
-        background-color: #fff;
-        padding: 10px 20px;
-        font-size: 20px;
-        border-radius: 10px;
-        border: 1px solid #ccc;
-        cursor: pointer;
-        margin-right: 2%;
-    }
-
-    .fixed-title .back-button:hover {
-        background-color: #e0e0e0;
-    }
+        .navbar a:hover {
+            color: #007bff;
+        }
     </style>
 </head>
 <body>
 <div class="layout">
     <div class="header">
-        <div class="fixed-title"><a class="back-button" href="http://localhost:8080/home"><</a><p>수</p>어 <p>번</p>역</div>
+        <div class="fixed-title"><p>수</p>어 <p>번</p>역</div>
     </div>
 
     <div class="grid-container">
@@ -237,6 +227,18 @@
     <div class="mb-3">
         <h6>Response >></h6>
         <div class="container border overflow-auto h-50" id="response"></div>
+    </div>
+
+    <div class="navbar">
+        <a href="http://localhost:8080/logout" class="footer-link">
+            <i class="fas fa-sign-out-alt"></i><span>Log Out</span>
+        </a>
+        <a href="http://localhost:8080/home" class="footer-link">
+            <i class="fas fa-home"></i><span>Home</span>
+        </a>
+        <a href="http://localhost:8080/user/mypage" class="footer-link">
+            <i class="fas fa-user"></i><span>My Page</span>
+        </a>
     </div>
 </div>
 
@@ -259,7 +261,7 @@
 
             // 서버로 POST 요청 보내기
             $.ajax({
-                url: '{% url "handle_prompt" %}',  // hand_gesture URL로 변경
+                url: '{% url "handle_prompt" %}', 
                 type: 'POST',
                 data: {},
                 dataType: 'json',
@@ -267,7 +269,7 @@
                     // 서버로부터 받은 응답을 클라이언트에 표시
                     $('#response').prepend(
                         '<div class="bubble user">' +
-                        '<p>(' + time + ') <i class="bi bi-robot"></i>: ' + data.response + '</p>' + data.prompt + 
+                        '<p>(' + time + ') <i class="bi bi-robot"></i>: ' + data.response + '</p>' +
                         '</div>'
                     );
                 },
