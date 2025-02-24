@@ -8,4 +8,6 @@ GPT API를 통한 수어 동작 실시간 번역 서버(Django)
     
     
 ### - 수어 번역
-<img src="https://github.com/user-attachments/assets/a65feaab-fdb6-4e59-839e-ad059a19eae9" width="40%">
+<img src="https://github.com/user-attachments/assets/69bea2b1-64d3-4d20-881f-795c6291905d" width="30%"/>
+
+<img src="https://github.com/user-attachments/assets/a65feaab-fdb6-4e59-839e-ad059a19eae9" width="30%">
